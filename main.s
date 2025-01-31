@@ -59,7 +59,7 @@ main:
     lgr %r4, %r6
     lgr %r5, %r7
 
-    brasl %r14, multiply
+    brasl %r14, division_2
 
     brasl %r14, print_big_int
 
@@ -246,10 +246,107 @@ multiply: #input in R4:R5 and R2:R3 result in R2:R3
     leave 0
 ret
 
-devide: #devidend in R2:R3 devisor in R4:R5
+devide: #devidend in R2:R3 devisor in R4:R5 result in R2:R3(64 bit)
     enter 0
 
+    lgr %r7, %r2
+    lgfi %r6, 0
+    dlgr %r6, %r4
 
+    lgfi %r2, 0
+    agr %r3, %r6 #use 128 bit addition instead
+    
+    lgr %r8, %r2
+    lgr %r9, %r3
+    dlgr %r2, %r5
+
+    begin_div:
+        cgr %r3, %r7
+        jnl exit_division
+        agfi %r7, -1
+        agr %r8, %r4
+        lgr %r2, %r8
+        lgr %r3, %r9
+        dlgr %r2, %r5
+        j begin_div
+    exit_division:
+
+    cgfi %r3, 0
+    jh not_neg_div
+    lgfi %r3, 0
+    not_neg_div:
+    lgfi %r2, 0
 
     leave 0
     ret
+
+division_2:
+    enter 0
+    # Input:
+#   %r2:%r3 = 128-bit dividend (high 64 bits in %r2, low 64 bits in %r3)
+#   %r4:%r5 = 128-bit divisor (high 64 bits in %r4, low 64 bits in %r5)
+# Output:
+#   %r2:%r3 = 128-bit quotient
+
+divide_128bit_by_128bit:
+    # Check if divisor is zero
+    cgfi %r4, 0
+    jne divisor_not_zero
+    cgfi %r5, 0
+    jne divisor_not_zero
+    # Handle division by zero (e.g., return 0 or trigger an error)
+    lgfi %r2, 0
+    lgfi %r3, 0
+    br %r14
+
+divisor_not_zero:
+    # Initialize quotient to 0
+    lgfi %r6, 0  # High 64 bits of quotient
+    lgfi %r7, 0  # Low 64 bits of quotient
+
+    # Loop counter for 128 iterations (128 bits)
+    lgfi %r8, 128
+
+divide_loop:
+    # Shift the quotient left by 1 bit
+    sllg %r6, %r6, 1
+    sllg %r7, %r7, 1
+    # Shift the dividend left by 1 bit
+    sllg %r2, %r2, 1
+    sllg %r3, %r3, 1
+    # Add carry from %r2 to %r3
+    jno no_carry_high
+    ogr %r3, 1
+no_carry_high:
+    # Add carry from %r3 to quotient
+    jno no_carry_low
+    ogr %r7, 1
+no_carry_low:
+
+    # Check if dividend >= divisor
+    cgr %r2, %r4
+    jl skip_subtract
+    jg perform_subtract
+    cgr %r3, %r5
+    jl skip_subtract
+
+perform_subtract:
+    # Subtract divisor from dividend
+    slgr %r3, %r5
+    slbgr %r2, %r4
+
+    # Set the least significant bit of the quotient
+    ogr %r7, 1
+
+skip_subtract:
+    # Decrement loop counter
+    agfi %r8, -1
+    jnz divide_loop
+
+    # Move quotient to %r2:%r3
+    lgr %r2, %r6
+    lgr %r3, %r7
+
+    # Return
+    leave 0
+ret
