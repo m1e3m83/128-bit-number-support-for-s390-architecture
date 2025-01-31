@@ -234,12 +234,22 @@ print_big_int:
 
 multiply: #input in R4:R5 and R2:R3 result in R2:R3
     enter 0
-    msgrkc %r6, %r2, %r5
-    msgrkc %r7, %r4, %r3
+    lgr %r7, %r2
+    lgr %r9, %r4
+    mlgr %r6, %r5
+    mlgr %r8, %r3
 
     mlgr %r2, %r5
 
-    agr %r2, %r6
     agr %r2, %r7
+    agr %r2, %r9
     leave 0
 ret
+
+devide: #devidend in R2:R3 devisor in R4:R5
+    enter 0
+
+
+
+    leave 0
+    ret
