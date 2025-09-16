@@ -7,9 +7,12 @@ This project implements 128-bit signed arithmetic operations (addition, subtract
 ## Usage
 
 The program accepts input in the following format:
-128-bit number 1
-operator (+, -, *, /)
-128-bit number 2
+
+[128-bit number 1]
+
+[operator (+, -, *, /)]
+
+[128-bit number 2]
 
 
 Enter 'q' to quit the program.
