@@ -12,12 +12,38 @@
     br  %r14
 .endm
 
-.macro big_not r1, r2 
+.macro big_not r1, r2
     xihf \r1, 0xffffffff
     xihf \r2, 0xffffffff
     xilf \r1, 0xffffffff
     xilf \r2, 0xffffffff
-.endm   
+.endm
+
+.macro big_shift_right dest_h, dest_l, src_h, src_l, num
+    lghi \dest_l, 0
+    ngr \dest_l, \dest_l
+    lghi \dest_h, 64
+    slfi \dest_h, \num
+    srlg \dest_l, \dest_l, 0(\dest_h)
+    ogr \dest_l, \src_h
+    sllg \dest_l, \dest_l, 0(\dest_h)
+    srlg \dest_h, \src_l, \num
+    ogr \dest_l, \dest_h
+    srlg \dest_h, \src_h, \num
+.endm
+
+.macro big_shift_left dest_h, dest_l, src_h, src_l, num
+    lghi \dest_h, 0
+    ngr \dest_h, \dest_h
+    lghi \dest_l, 64
+    slfi \dest_l, \num
+    sllg \dest_h, \dest_h, 0(\dest_l)
+    ogr \dest_h, \src_l
+    srlg \dest_h, \dest_h, 0(\dest_l)
+    sllg \dest_l, \src_h, 0(\num)
+    ogr \dest_h, \dest_l
+    sllg \dest_l, \src_l, 0(\num)
+.endm
 
 .macro big_add dest_l, dest_h, src1_l, src1_h, src2_l, src2_h
     lgr \dest_l, \src1_l # Copy src1 into dest
@@ -31,16 +57,22 @@
 
 
 num_1019: .quad 10000000000000000000
-dbg: .string "%lld\0"
+string_format: .string "%s\0"
 char_format: .string "%c\0"
 part_1_format: .string "%llu\0"
 part_2_format: .string "%019llu\n\0"
 one_part_format: .string "%llu\n\0"
 one_part_format_2: .string "%llu\n\0"
+one_part_format_3: .string "njgklnels %llu\n\0"
 negative_symbol: .string "-\0"
+negative_symbol_1: .string "-\0"
 check_scan: .string "first part: %llu     second part: %llu \n\0"
+error_1: .string "Please enter a valid operator \n\0"
+error_2: .string "Please enter a valid operator (+ - * /)\n\0"
+number_error: .string "Please enter a valid number\n\0"
 input_string: .space 60
 current_char: .space 1
+op: .space 1000
 
 .text
 .align 8
@@ -48,33 +80,216 @@ current_char: .space 1
 .globl main
 
 main:
-    enter 0
+enter 0
+    while:
+    brasl %r14, scan_big_int
+    cgfi %r0, 1
+    je exit
+    lgr %r8, %r2
+    lgr %r9, %r3
+
+    brasl %r14, handel_op
+    cgfi %r0, 1
+    je exit
+    lgr %r7, %r2
 
     brasl %r14, scan_big_int
-    lgr %r6, %r2
-    lgr %r7, %r3
+    cgfi %r0, 1
+    je exit
 
-    brasl %r14, scan_big_int
-
-    lgr %r4, %r6
-    lgr %r5, %r7
-
-    brasl %r14, division_2
-
+    lgr %r4, %r2
+    lgr %r5, %r3
+    lgr %r2, %r8
+    lgr %r3, %r9
+    basr %r14, %r7
     brasl %r14, print_big_int
-
-    exit:
-    leave 0
-    xgr %r2, %r2
+    j while
+exit:
+leave 0
 ret
 
-
-scan_big_int: # output in %r2 & %r3
+handel_op:
     enter 0
+
+    start_handel_op:
+    larl %r2, string_format
+    larl %r3, op
+    brasl %r14, scanf
+    lghi %r0, 0
+
+    larl %r2, op
+    brasl %r14, strlen
+    cgfi %r2, 1
+    jne print_op_error
+
+    lghi %r0, 0
+    larl %r8, op
+    llc %r3, 0(%r8)
+    cgfi %r3, 43
+    jne check_sub
+    larl %r2, add
+    j exit_handel_op
+
+    check_sub:
+    cgfi %r3, 45
+    jne check_mul
+    larl %r2, sub
+    j exit_handel_op
+
+    check_mul:
+    cgfi %r3, 42
+    jne check_div
+    larl %r2, mul
+    j exit_handel_op
+
+    check_div:
+    cgfi %r3, 47
+    jne check_q
+    larl %r2, div
+    j exit_handel_op
+
+    check_q:
+    cgfi %r3, 113
+    jne print_op_error
+
+    exit_code:
+    lghi %r0, 1
+
+    exit_handel_op:
+    leave 0
+    ret
+
+    print_op_error:
+    larl %r2, error_2
+    brasl %r14, printf
+    j start_handel_op
+
+add:
+    enter 0
+    big_add %r3, %r2, %r3, %r2, %r5, %r4
+    leave 0
+    ret
+
+sub:
+    enter 0
+    big_not %r4, %r5
+    lghi %r1, 1
+    lghi %r0, 0
+    big_add %r5, %r4, %r5, %r4, %r1, %r0
+    big_add %r3, %r2, %r3, %r2, %r5, %r4
+    leave 0
+    ret
+
+mul:
+    enter 0
+    msgrkc %r6, %r2, %r5
+    msgrkc %r7, %r4, %r3
+    mlgr %r2, %r5
+    agr %r2, %r6
+    agr %r2, %r7
+    leave 0
+    ret
+
+div:
+    enter 0
+
+    lgr %r12, %r2
+    xgr %r12, %r4
+    srlg %r12, %r12, 63
+
+    lghi %r7, 0
+    lghi %r8, 0
+    lghi %r9, 1
+
+    cgfi %r2, -1
+    jh check_num_2
+    big_not %r2, %r3
+    big_add %r3, %r2, %r3, %r2, %r9, %r8
+
+    check_num_2:
+    cgfi %r4, -1
+    jh end_check
+    big_not %r4, %r5
+    big_add %r5, %r4, %r5, %r4, %r9, %r8
+
+    end_check:
+
+    cgfi %r4, 0
+    je check_low_part
+    flogr %r10, %r4
+    sllg %r8, %r9, 0(%r10)
+    lgr %r9, %r10
+    big_shift_left %r10, %r11, %r4, %r5, %r9
+    j end_find_msb
+
+    check_low_part:
+    cgfi %r5, 0
+
+    flogr %r10, %r5
+    sllg %r7, %r9, 0(%r10)
+    lgr %r9, %r10
+    big_shift_left %r10, %r11, %r5, %r4, %r9
+    agfi %r9, 64
+    end_find_msb:
+
+    lghi %r0, 0
+    lghi %r1, 0
+
+    div_while:
+        cgfi %r9, 0
+        jl exit_div_while
+        clgr %r2, %r10
+        jh div_sub
+        jl continue_while
+        clgr %r3, %r11
+        jl continue_while
+
+        div_sub:
+        stmg %r0, %r1, 48(%r15)
+        lay %r15, -(160)(%r15)
+
+        lgr %r4, %r10
+        lgr %r5, %r11
+        brasl %r14, sub
+
+        lay %r15, (160)(%r15)
+        lmg %r0, %r1, 48(%r15)
+
+        ogr %r0, %r7
+        ogr %r1, %r8
+
+        continue_while:
+        big_shift_right %r4, %r5, %r7, %r8, 1
+        lgr %r7, %r4
+        lgr %r8, %r5
+        big_shift_right %r4, %r5, %r10, %r11, 1
+        lgr %r10, %r4
+        lgr %r11, %r5
+        agfi %r9, -1
+        j div_while
+    exit_div_while:
+
+    cgfi %r12, 0
+    je return_num
+    big_not %r0, %r1
+    lghi %r4, 0
+    big_add %r1, %r0, %r1, %r0, %r12, %r4
+
+    return_num_div:    
+    lgr %r2, %r0
+    lgr %r3, %r1
+    leave 0
+    ret
+
+scan_big_int: # output in %r0 & %r1
+    enter 0
+
+    start_scan:
     lghi %r7, 0 # sing
     lghi %r8, 0
     larl %r9, input_string
     larl %r10, current_char
+    lghi %r11, 1 # error flag
 
     larl %r3, current_char
     larl %r2, char_format
@@ -91,8 +306,16 @@ scan_big_int: # output in %r2 & %r3
     je get_char
 
     cgfi %r2, 10
-    je exit_get_char
+    je start_scan
+
+    cgfi %r2, 32
+    je start_scan
+
+    cgfi %r2, 113
+    je check_just_q
+
     agfi %r2, -48
+    brasl %r14, is_bcd
     stc %r2, 0(%r8, %r9)
     agfi %r8, 1
 
@@ -103,11 +326,20 @@ scan_big_int: # output in %r2 & %r3
         llc %r2, 0(%r10)
         cgfi %r2, 10
         je exit_get_char
+        cgfi %r2, 32
+        je exit_get_char
         agfi %r2, -48
+        brasl %r14, is_bcd
         stc %r2, 0(%r8, %r9)
         agfi %r8, 1
         j get_char
     exit_get_char:
+
+    cgfi %r8, 0
+    je print_number_error
+
+    cgfi %r11, 0
+    je print_number_error
 
     lgr %r2, %r8
     lgr %r3, %r9
@@ -130,13 +362,42 @@ scan_big_int: # output in %r2 & %r3
     lghi %r6, 1
     big_not %r10, %r11
     big_add %r3, %r2, %r10, %r11, %r6, %r7
+    lghi %r0, 0
     leave 0
     ret
 
     return_num:
+    lghi %r0, 0
     lgr %r3, %r10
     lgr %r2, %r11
     leave 0
+    ret
+
+    check_just_q:
+    larl %r3, current_char
+    larl %r2, char_format
+    brasl %r14, scanf
+    llc %r2, 0(%r10)
+    cgfi %r2, 10
+    je exit_code
+    cgfi %r2, 32
+    je exit_code
+    lghi %r11, 0
+    j get_char
+
+    print_number_error:
+    larl %r2, number_error
+    brasl %r14, printf
+    j start_scan
+
+is_bcd:
+    cgfi %r2, 0
+    jl not_bcd
+    cgfi %r2, 10
+    jl exit_check_bcd
+    not_bcd:
+    lghi %r11, 0
+    exit_check_bcd:
     ret
 
 get_first_long:
@@ -150,7 +411,7 @@ get_first_long:
     lghi %r10, 0  # bit counter
     lghi %r11, 0  # digit counter
 
-    div:
+    div_2:
         lr %r5, %r11
 
         digit_div:
@@ -181,7 +442,7 @@ get_first_long:
         je exit_div
         agfi %r10, 1
         cgfi %r10, 64
-        jne div
+        jne div_2
 
     lghi %r3, 1
     leave 0
@@ -200,7 +461,7 @@ print_big_int:
     lghi %r5, 1
     big_not %r2, %r3
     big_add %r9, %r8, %r3, %r2, %r5, %r4
-    larl %r2, negative_symbol
+    larl %r2, negative_symbol_1
     brasl %r14, printf
     lgr %r3, %r9
     lgr %r2, %r8
@@ -229,124 +490,3 @@ print_big_int:
     brasl %r14, printf
     leave 0
     ret
-
-
-
-multiply: #input in R4:R5 and R2:R3 result in R2:R3
-    enter 0
-    lgr %r7, %r2
-    lgr %r9, %r4
-    mlgr %r6, %r5
-    mlgr %r8, %r3
-
-    mlgr %r2, %r5
-
-    agr %r2, %r7
-    agr %r2, %r9
-    leave 0
-ret
-
-devide: #devidend in R2:R3 devisor in R4:R5 result in R2:R3(64 bit)
-    enter 0
-
-    lgr %r7, %r2
-    lgfi %r6, 0
-    dlgr %r6, %r4
-
-    lgfi %r2, 0
-    agr %r3, %r6 #use 128 bit addition instead
-    
-    lgr %r8, %r2
-    lgr %r9, %r3
-    dlgr %r2, %r5
-
-    begin_div:
-        cgr %r3, %r7
-        jnl exit_division
-        agfi %r7, -1
-        agr %r8, %r4
-        lgr %r2, %r8
-        lgr %r3, %r9
-        dlgr %r2, %r5
-        j begin_div
-    exit_division:
-
-    cgfi %r3, 0
-    jh not_neg_div
-    lgfi %r3, 0
-    not_neg_div:
-    lgfi %r2, 0
-
-    leave 0
-    ret
-
-division_2:
-    enter 0
-    # Input:
-#   %r2:%r3 = 128-bit dividend (high 64 bits in %r2, low 64 bits in %r3)
-#   %r4:%r5 = 128-bit divisor (high 64 bits in %r4, low 64 bits in %r5)
-# Output:
-#   %r2:%r3 = 128-bit quotient
-
-divide_128bit_by_128bit:
-    # Check if divisor is zero
-    cgfi %r4, 0
-    jne divisor_not_zero
-    cgfi %r5, 0
-    jne divisor_not_zero
-    # Handle division by zero (e.g., return 0 or trigger an error)
-    lgfi %r2, 0
-    lgfi %r3, 0
-    br %r14
-
-divisor_not_zero:
-    # Initialize quotient to 0
-    lgfi %r6, 0  # High 64 bits of quotient
-    lgfi %r7, 0  # Low 64 bits of quotient
-
-    # Loop counter for 128 iterations (128 bits)
-    lgfi %r8, 128
-
-divide_loop:
-    # Shift the quotient left by 1 bit
-    sllg %r6, %r6, 1
-    sllg %r7, %r7, 1
-    # Shift the dividend left by 1 bit
-    sllg %r2, %r2, 1
-    sllg %r3, %r3, 1
-    # Add carry from %r2 to %r3
-    jno no_carry_high
-    ogr %r3, 1
-no_carry_high:
-    # Add carry from %r3 to quotient
-    jno no_carry_low
-    ogr %r7, 1
-no_carry_low:
-
-    # Check if dividend >= divisor
-    cgr %r2, %r4
-    jl skip_subtract
-    jg perform_subtract
-    cgr %r3, %r5
-    jl skip_subtract
-
-perform_subtract:
-    # Subtract divisor from dividend
-    slgr %r3, %r5
-    slbgr %r2, %r4
-
-    # Set the least significant bit of the quotient
-    ogr %r7, 1
-
-skip_subtract:
-    # Decrement loop counter
-    agfi %r8, -1
-    jnz divide_loop
-
-    # Move quotient to %r2:%r3
-    lgr %r2, %r6
-    lgr %r3, %r7
-
-    # Return
-    leave 0
-ret
