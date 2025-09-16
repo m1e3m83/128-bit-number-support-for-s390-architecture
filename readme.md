@@ -4,7 +4,7 @@
 
 This project implements 128-bit signed arithmetic operations (addition, subtraction, multiplication, and division) in IBM x390 assembly language. The program reads three input lines per operation: a 128-bit signed number, an operator, and another 128-bit number. It continues processing until it receives 'q' as input.
 
-## 🛠️ Implementation Details
+## Implementation Details
 
 ### Number Representation
 - Numbers are stored using two consecutive 64-bit iregisters (high and low parts)
@@ -30,14 +30,18 @@ operator (+, -, *, /)
 
 Enter 'q' to quit the program.
 
-## 📝 Requirements
+##  Requirements
 
 - IBM x390 assembly environment
 - Standard C library for I/O operations
 - Compatible simulator for execution
 
-## Contributors
+## Notes
 
+This project was completed as a part of the Computer Structure and Language course.
+
+
+**contributors**:
 - Mohammad Marandi
 - Fatemeh Shafi'i
 - Hosna Shah Heydari
